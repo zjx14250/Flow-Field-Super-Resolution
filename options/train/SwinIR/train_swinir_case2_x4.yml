@@ -1,0 +1,119 @@
+# general settings
+name: SwinIR_Case2_x4
+model_type: Case2SRModel  # Custom model for 2-channel data
+scale: 4  # 4x super-resolution
+num_gpu: 1
+manual_seed: 0
+
+# dataset and data loader settings
+datasets:
+  train:
+    name: Case2Train
+    type: Case2Dataset
+    dataroot_lq: datasets/case2_cu_grid.h5
+    dataroot_gt: datasets/case2_xi_grid.h5
+    phase: train
+
+    # data loader
+    use_shuffle: true
+    num_worker_per_gpu: 4
+    batch_size_per_gpu: 32  # optimized batch size for better GPU utilization
+    prefetch_mode: ~
+
+  val:
+    name: Case2Val
+    type: Case2Dataset
+    dataroot_lq: datasets/case2_cu_grid.h5
+    dataroot_gt: datasets/case2_xi_grid.h5
+    phase: val
+
+# network structures
+network_g:
+  type: SwinIR_Custom
+  upscale: 4  # 4x upscaling
+  in_chans: 2  # 2 channels for case2 data
+  img_size: 32  # LQ size is 32x64, use 32 as base
+  window_size: 8
+  img_range: 1.
+  depths: [6, 6, 6, 6]
+  embed_dim: 60
+  num_heads: [6, 6, 6, 6]
+  mlp_ratio: 2
+  upsampler: 'pixelshuffle'  # use pixelshuffle for 4x (more stable than pixelshuffledirect)
+  resi_connection: '1conv'
+
+# path
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+# training settings
+train:
+  optim_g:
+    type: Adam
+    lr: !!float 2e-4
+    weight_decay: 0
+    betas: [0.9, 0.999]
+
+  scheduler:
+    type: MultiStepLR
+    milestones: [9000, 13500, 16200]  # 50%, 75%, 90% of total_iter
+    gamma: 0.5
+
+  total_iter: 18000  # 200 epochs (18000 / 90 iters_per_epoch)
+  warmup_iter: -1
+
+  # losses
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 1.0
+    reduction: mean
+
+# validation settings
+val:
+  val_freq: 500  # Validate every ~5.6 epochs
+  save_img: false  # Disable for 2-channel scientific data (not RGB)
+
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 4  # crop border for scale 4
+      test_y_channel: false
+
+    ssim:
+      type: calculate_ssim
+      crop_border: 4
+      input_order: HWC
+      test_y_channel: false  # Not applicable for 2-channel flow field
+
+    rmse:
+      type: calculate_rmse
+      crop_border: 4
+      input_order: HWC
+      better: lower
+
+    pearsonr:
+      type: calculate_pearsonr
+      crop_border: 4
+      input_order: HWC
+
+    energy_spectrum:
+      type: calculate_energy_spectrum
+      crop_border: 4
+      input_order: HWC
+      better: lower
+
+# logging settings
+logger:
+  print_freq: 100
+  save_checkpoint_freq: 2000  # Save every ~22 epochs
+  use_tb_logger: true
+  wandb:
+    project: ~
+    resume_id: ~
+
+# dist training settings
+dist_params:
+  backend: nccl
+  port: 29500

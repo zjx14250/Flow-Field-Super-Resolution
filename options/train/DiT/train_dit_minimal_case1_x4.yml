@@ -1,0 +1,117 @@
+# DiT Minimal - Quick Validation Configuration
+# Goal: Fast verification of DiT architecture on 2-channel flow field data
+# Training time: ~8-10 hours on RTX 3090
+
+name: DiTMinimal_Case1_x4_FastVerify
+model_type: DiTSimpleModel  # Custom diffusion training model
+scale: 4  # cu (64) → chao (256)
+num_gpu: 1
+manual_seed: 42
+
+# Dataset settings
+datasets:
+  train:
+    name: Case1Train
+    type: Case1Dataset
+    dataroot_lq: datasets/case1_cu_grid.h5      # 64×128×2
+    dataroot_gt: datasets/case1_chao_grid.h5    # 256×512×2
+    phase: train
+    batch_size_per_gpu: 4   # RTX 3090 24GB can handle this
+    num_worker_per_gpu: 4
+    use_shuffle: true
+
+  val:
+    name: Case1Val
+    type: Case1Dataset
+    dataroot_lq: datasets/case1_cu_grid.h5
+    dataroot_gt: datasets/case1_chao_grid.h5
+    phase: val
+
+# Network architecture (simplified DiT)
+network_g:
+  type: DiTMinimal
+  in_channels: 2          # 2-channel flow field (u, v components)
+  img_size: [256, 512]    # GT resolution (H, W) - non-square!
+  patch_size: 16          # 16×32 patches
+  embed_dim: 96           # ⚠️ Reduced from 160 (fast verification)
+  depth: 3                # ⚠️ Reduced from 6+ (fast verification)
+  num_heads: 8
+  mlp_ratio: 4.0
+  dropout: 0.0
+  cond_lq: true           # Use LQ image as condition
+
+# Diffusion process configuration
+diffusion:
+  num_timesteps: 4        # ⚠️ Reduced from 15 (fast verification)
+  beta_start: 0.0001      # Minimum noise level
+  beta_end: 0.02          # Maximum noise level
+
+# Training settings
+train:
+  optim_g:
+    type: Adam           # BasicSR 1.4.2 doesn't support AdamW
+    lr: !!float 1e-4      # Slightly higher LR for fast convergence
+    weight_decay: 0
+    betas: [0.9, 0.999]
+
+  scheduler:
+    type: MultiStepLR
+    milestones: [6000]    # Reduce LR at 6k iterations
+    gamma: 0.5
+
+  total_iter: 8000        # ⚠️ Fast verification (8-10 hours)
+  warmup_iter: 500        # Warmup first 500 iterations
+
+# Validation settings
+val:
+  val_freq: 1000          # Validate every 1k iterations
+  save_img: true          # Save validation results
+
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 4
+      test_y_channel: false  # Not applicable for 2-channel data
+
+    ssim:
+      type: calculate_ssim
+      crop_border: 4
+      input_order: HWC
+      test_y_channel: false
+
+    rmse:
+      type: calculate_rmse
+      crop_border: 4
+      input_order: HWC
+      better: lower  # ✅ Fixed from previous issue
+
+    pearsonr:
+      type: calculate_pearsonr
+      crop_border: 4
+      input_order: HWC
+
+    energy_spectrum:
+      type: calculate_energy_spectrum
+      crop_border: 4
+      input_order: HWC
+      better: lower  # ✅ Fixed from previous issue
+
+# Logging settings
+logger:
+  print_freq: 100         # Print training log every 100 iterations
+  save_checkpoint_freq: 2000  # Save checkpoint every 2k iterations
+  use_tb_logger: true     # Enable TensorBoard logging
+  wandb:
+    project: ~
+    resume_id: ~
+
+# Path settings (auto-generated)
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+# Distributed training settings (single GPU, no DDP)
+dist_params:
+  backend: nccl
+  port: 29500

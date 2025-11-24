@@ -1,0 +1,95 @@
+# Baseline: Bilinear interpolation for 8x super-resolution
+# This is the most common baseline in SR literature
+name: Baseline_Bilinear_Case1_x8
+model_type: BaselineModel  # Parameter-free baseline model
+scale: 8
+num_gpu: 1
+manual_seed: 0
+
+# dataset and data loader settings
+datasets:
+  train:
+    name: Case1Train
+    type: Case1Dataset
+    dataroot_lq: datasets/case1_cu_grid.h5
+    dataroot_gt: datasets/case1_chao_grid.h5
+    phase: train
+    batch_size_per_gpu: 1
+    num_worker_per_gpu: 0
+    use_shuffle: false
+
+  val:
+    name: Case1Val
+    type: Case1Dataset
+    dataroot_lq: datasets/case1_cu_grid.h5
+    dataroot_gt: datasets/case1_chao_grid.h5
+    phase: val
+
+# network structures (no trainable parameters)
+network_g:
+  type: BilinearInterpolation
+  upscale: 8
+  in_chans: 2
+
+# path
+path:
+  pretrain_network_g: ~
+  strict_load_g: false  # No pretrained weights needed
+
+# No training, only validation
+train:
+  total_iter: 1  # Minimal iteration to trigger validation
+  optim_g:
+    type: Adam
+    lr: !!float 1e-4
+
+  # Dummy loss (not used, but required by BasicSR)
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 1.0
+    reduction: mean
+
+# validation settings
+val:
+  val_freq: 1  # Validate immediately
+  save_img: false
+
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 8
+      test_y_channel: false
+
+    ssim:
+      type: calculate_ssim
+      crop_border: 8
+      input_order: HWC
+      test_y_channel: false
+
+    rmse:
+      type: calculate_rmse
+      crop_border: 8
+      input_order: HWC
+      better: lower
+
+    pearsonr:
+      type: calculate_pearsonr
+      crop_border: 8
+      input_order: HWC
+
+    energy_spectrum:
+      type: calculate_energy_spectrum
+      crop_border: 8
+      input_order: HWC
+      better: lower
+
+# logging settings
+logger:
+  print_freq: 1
+  save_checkpoint_freq: !!float inf  # Never save checkpoints
+  use_tb_logger: false
+
+# dist training settings
+dist_params:
+  backend: nccl
+  port: 29500
